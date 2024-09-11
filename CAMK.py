@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import Canvas
+from tkinter import ttk
 import serial.tools.list_ports
 import can
 import struct
@@ -32,9 +33,9 @@ config = {
         11: "AMK_bErrorReset",
     },
     "AMK_Setpoint": {
-        16: "AMK_TargetVelocity",
-        32: "AMK_TorqueLimitPositiv",
-        48: "AMK_TorqueLimitNegativ",
+        16: ("AMK_TargetVelocity",(-100, 100)),
+        32: ("AMK_TorqueLimitPositiv", (0,100)),
+        48: ("AMK_TorqueLimitNegativ",(0,100)),
     }    
 }   
 motor_config = {
@@ -62,6 +63,8 @@ motor_config = {
         "target_address": 189,
     }
 }
+
+msg_log = None
 
 class MotorControlApp(tk.Tk):
     def __init__(self):
@@ -141,7 +144,12 @@ class MotorControlApp(tk.Tk):
         self.enable_button.config(text="Enable communication")
 
     def open_message_log(self):
-        print("Message log opened")
+        global msg_log
+        if msg_log is None or not msg_log.winfo_exists():
+            print("Message log opened")
+            msg_log = MessageLog()
+        else:
+            msg_log.lift()
 
     def create_amk_control_checkbox(self, text):
         self.checkbox_frame = tk.LabelFrame(self.main_frame, text=text, padx=10, pady=10)
@@ -179,7 +187,69 @@ class MotorControlApp(tk.Tk):
         print(",".join([f" {config['AMK_Control'][bit]} : {var.get()}" for bit, var in self.checkbox_vars.items()]), end="")
         print("}")
         self.after(5000, self.debug)
+    
+    
+class CanComm:
+    def __init__(self, motors, bitrate=500000):
+        self.is_sending = False
+        self.enable = False
+        self.bus = None
+        self.bitrate = bitrate
+        self.sending_thread = None 
+        self.motors = motors
 
+        self.amk_status = [0]*8
+        self.amk_control = [0]*4
+        self.amk_target = [0]*3
+        self.amk_set = [0]*3
+
+        self.listen_thread = threading.Thread(target=self.listen_to_can_bus)
+        self.listen_thread.daemon = True
+        self.listen_thread.start()
+
+    def update_bus(self, com_port):
+        if self.bus is not None:
+            self.bus.shutdown()
+        self.bus = can.interface.Bus(channel=com_port, bustype="pcan", bitrate=self.bitrate)
+    
+
+    def update_from_app(self, amk_status, amk_control, amk_target):
+        self.amk_status = amk_status
+        self.amk_control = amk_control
+        self.amk_target = amk_target
+        
+
+    def listen_to_can_bus(self):
+        while True:
+            if self.bus is not None:
+                message = self.bus.recv()
+                if message is not None:
+                    self.receive_message(message)
+                
+    def receive_message(self, message: can.Message):
+        bit_values = {
+            8: (message.data[1] >> 0) & 1 if len(message.data) > 1 else 0,
+            9: (message.data[1] >> 1) & 1 if len(message.data) > 1 else 0,
+            10: (message.data[1] >> 2) & 1 if len(message.data) > 1 else 0,
+            11: (message.data[1] >> 3) & 1 if len(message.data) > 1 else 0,
+            12: (message.data[1] >> 4) & 1 if len(message.data) > 1 else 0,
+            13: (message.data[1] >> 5) & 1 if len(message.data) > 1 else 0,
+            14: (message.data[1] >> 6) & 1 if len(message.data) > 1 else 0,
+            15: (message.data[1] >> 7) & 1 if len(message.data) > 1 else 0
+        }
+        
+        # Using lock for thread-safe access to motor updates
+        with self.lock:
+            for motor in self.motors:
+                motor.recieve_update(message, bit_values)
+        self.update_log(message)#TODO: Implement update_log
+    
+    def update_log(self, message):
+        self.log
+    
+    def mainloop(self):
+        app = MotorControlApp()
+        app.mainloop()
 
 
 class Motor:
@@ -187,11 +257,25 @@ class Motor:
         self.name = name
         self.amk_status = config["AMK_Status"]
         self.amk_control = config["AMK_Control"]
-        self.status_address = 111
-        self.control_address = 111
-        self.target_address = 111
+        self.status_address = motor_config[name]["status_address"]
+        self.control_address = motor_config[name]["control_address"]    
+        self.target_address = motor_config[name]["target_address"]  
         self.amk_gains = [0,0,0]
         self.bus = bus
+
+    def recieve_update(self, message, bit_values):
+        if message.arbitration_id == self.status_address:
+            for i, bit in enumerate(bit_values.values()):
+                self.amk_status[i] = bit
+        elif message.arbitration_id == self.control_address:
+            for i, bit in enumerate(bit_values.values()): 
+                self.amk_control[i] = bit 
+        else:
+            pass
+    
+        
+    
+     
 
 class MotorFrame(tk.Frame):
     def __init__(self, parent, name):
@@ -217,9 +301,10 @@ class MotorFrame(tk.Frame):
 
         self.slider_vars = []
         for i in range(3):
-            label = tk.Label(self.sliders_frame, text=config["AMK_Setpoint"][16 + 16*i])
+            slide_config = config["AMK_Setpoint"][16 + 16*i]
+            label = tk.Label(self.sliders_frame, text=slide_config[0])
             label.grid(row=2*i, column=0, padx=1)
-            slider = tk.Scale(self.sliders_frame, from_=0, to=100, orient="horizontal") #TODO: command=update_setpoint 
+            slider = tk.Scale(self.sliders_frame, from_=slide_config[1][0], to=slide_config[1][1], orient="horizontal") #TODO: command=update_setpoint 
 
             slider.grid(row=2*i+1, column=0, padx=1)
             
@@ -236,9 +321,12 @@ class MotorFrame(tk.Frame):
         self.amk_vals_frame.pack(fill="x",pady=5)
         self.amk_vals = {}
         self.create_amk_vals(config["AMK_Actual values"], self.amk_vals_frame)
+        
+        self.dropdown_active = tk.BooleanVar(value=False)
+        self.dropdown_checkbox = tk.Checkbutton(self, text="Chnage default filters", command=self.toggle_dropdown, variable = self.dropdown_active)
+        self.dropdown_checkbox.pack(fill="x", pady=5, padx=10, side="left")
 
-        self.dropdown_frame = tk.Frame(self)
-        self.dropdown_frame.pack(fill="x", pady=5)
+        
 
         
 
@@ -270,9 +358,60 @@ class MotorFrame(tk.Frame):
             entry = tk.Entry(val_frame ,width=10)
             entry.insert(0, "100")
             entry.config(state="disabled", disabledbackground="lightgrey", disabledforeground="black")
-            entry.pack(side="left", padx=5)
+            entry.pack(side="right", padx=5, anchor="e")
             self.amk_vals[bit] = entry
+    
+    def create_dropdown(self):
+        self.dropdown_frame = tk.Frame(self)
+        self.dropdown_frame.pack(fill="x", pady=5)
+        
+
+
+        self.filter_list = list(motor_config[self.name].keys())
+        self.selected_filter = tk.StringVar()
+        self.selected_filter.set(self.filter_list[0])  
+        self.filter_dropdown = tk.OptionMenu(self.dropdown_frame, self.selected_filter, *self.filter_list, command=self.update_filter_val)
+
+        self.filter_dropdown.pack(side="left", padx=5)
+
+        self.filter_val = tk.StringVar()
+        self.filter_val_entry = tk.Entry(self.dropdown_frame, textvariable=self.filter_val, width=10)
+        self.filter_val_entry.insert(0, f"{motor_config[self.name][self.selected_filter.get()]}")
+        self.filter_val_entry.pack(side="left", padx=10, anchor="e") 
+
+
+    def update_filter_val(self, value):
+        self.filter_val.set(f"{motor_config[self.name][value]}")
+
+    def toggle_dropdown(self):
+        if self.dropdown_active.get():
+            self.create_dropdown()
+        else:
+            self.dropdown_frame.pack_forget()
+
+class MessageLog(tk.Toplevel):
+    def __init__(self):
+        super().__init__()
+        self.title("Message Log")
+
+        self.log_frame = tk.Frame(self)
+        self.log_frame.pack(fill="both", expand=True)
+
+        columns = ("Time", "Id", "Data")
+        self.tree = ttk.Treeview(self.log_frame, columns=columns, show="headings")
+        self.tree.heading("Time", text="Time")
+        self.tree.heading("Id", text="ID")
+        self.tree.heading("Data", text="Data")
+
+        self.tree.column("Time", width=100, anchor="center")
+        self.tree.column("Id", width=100, anchor="center")
+        self.tree.column("Data", width=400, anchor="center")
+
+        self.tree.pack(fill="both", expand=True)
+
+
+
 
 if __name__ == "__main__":
-    app = MotorControlApp()
-    app.mainloop()
+    comm = CanComm()
+    comm.mainloop()
