@@ -50,7 +50,7 @@ class CANBusMonitor:
         self.reading_com_label.grid(row=0, column=0, padx=10, pady=10, sticky="e")
 
         self.reading_com_var = tk.StringVar(value="COM14")
-        self.reading_com_dropdown = ttk.Combobox(master, textvariable=self.reading_com_var, values=["COM4", "COM14"])
+        self.reading_com_dropdown = ttk.Combobox(master, textvariable=self.reading_com_var, values=["COM4", 0])
         self.reading_com_dropdown.grid(row=0, column=1, padx=10, pady=10, sticky="w")
 
         self.toggle_reading_button = tk.Button(master, text="Enable Reading", command=self.toggle_reading)
@@ -61,7 +61,7 @@ class CANBusMonitor:
         self.transmitting_com_label.grid(row=0, column=3, padx=10, pady=10, sticky="e")
 
         self.transmitting_com_var = tk.StringVar(value="COM14")
-        self.transmitting_com_dropdown = ttk.Combobox(master, textvariable=self.transmitting_com_var, values=["COM4", "COM14"])
+        self.transmitting_com_dropdown = ttk.Combobox(master, textvariable=self.transmitting_com_var, values=["COM4", 0])
         self.transmitting_com_dropdown.grid(row=0, column=4, padx=10, pady=10, sticky="w")
 
         self.toggle_transmit_button = tk.Button(master, text="Enable Transmit", command=self.toggle_transmit)
@@ -321,7 +321,7 @@ class CANBusMonitor:
             if com_port == self.transmitting_com_var.get() and self.transmitting_enabled:
                 self.bus = self.send_bus
             else:
-                self.bus = can.interface.Bus(bustype='slcan', channel=com_port, bitrate=self.bitrate)
+                self.bus = can.interface.Bus(bustype='virtual', channel=com_port, bitrate=self.bitrate)
             self.reading_enabled = True
             self.toggle_reading_button.config(text="Disable Reading")
             print(f"Reading enabled on {com_port}.")
@@ -362,8 +362,15 @@ class CANBusMonitor:
             self.send_message()
             time.sleep(0.002) #NO FUCKING DELAY PLEASE
 
+
+
 if __name__ == '__main__':
     root = tk.Tk()
     root.title("CAN Bus Monitor")
     monitor = CANBusMonitor(root)
     root.mainloop()
+    
+
+
+
+
