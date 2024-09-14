@@ -10,6 +10,9 @@ import time
 import os
 from datetime import datetime
 import random
+import logging
+
+logging.basicConfig(filename="can_comm.log", level=logging.INFO)
 
 # CAN Operation Suite for AMK motor control
 config = {
@@ -92,6 +95,7 @@ class CanComm:
     def update_bus(self, com_port):
         if self.bus is not None:
             self.bus.shutdown()
+            self.bus = None
         print(com_port)
         self.comm_port = com_port
         try:
@@ -121,9 +125,15 @@ class CanComm:
                 # self.receive_message(test_message)
                 pass
             elif self.bus is not None:
-                message = self.bus.recv()
+                message = self.bus.recv(timeout=1)
                 if message is not None:
                     self.receive_message(message)
+                else:
+                    for motor in self.motors:
+                        motor.reset()
+                
+                
+                
             
 
     
@@ -155,8 +165,8 @@ class CanComm:
         with self.lock:
             for motor in self.motors:
                 motor.recieve_update(message, bit_values)
-                print(motor.amk_configs)
-                print(motor.amk_actual_values)
+                # print(motor.amk_configs)
+                # print(motor.amk_actual_values)
             self.update_log(message)
     
     def update_log(self, message):
@@ -178,9 +188,11 @@ class CanComm:
     def _send_continuously(self):
         while self.is_sending:
             with self.lock:
-                for motor in self.motors:
-                    motor.send_message()
-                print("Sending messages")
+                self.motors[0].send_message()
+                self.motors[1].send_message()
+                self.motors[2].send_message()
+                self.motors[3].send_message()
+                logging.info("------------------------Messages sent---------------------------------")
             time.sleep(1)
 
     def stop_sending_messages(self):
@@ -204,6 +216,11 @@ class Motor:
         self.target_address = motor_config[name]["target_address"]  
         self.amk_gains = [0,0,0]
         self.parent = parent
+        self.data = bytearray(8)
+        self.data[0] = 0
+
+        self.message = can.Message(arbitration_id=self.target_address, data=self.data, is_extended_id=False)
+
 
 
     def recieve_update(self, message: can.Message, bit_values):
@@ -224,20 +241,22 @@ class Motor:
 
     def send_message(self):
         try:
-            data = bytearray(8)
-
-            data[1] = (self.parent.amk_control_out[8] << 0) | \
-                        (self.parent.amk_control_out[9] << 1) | \
-                        (self.parent.amk_control_out[10] << 2) | \
-                        (self.parent.amk_control_out[11] << 3)
+            start_time = time.time()
+            control_out = self.amk_control 
+            self.data[1] = (control_out[8] << 0) | \
+                        (control_out[9] << 1) | \
+                        (control_out[10] << 2) | \
+                        (control_out[11] << 3)
             
-            data[2:4] = struct.pack('<h', self.amk_gains[0])
-            data[4:6] = struct.pack('<h', self.amk_gains[1])
-            data[6:8] = struct.pack('<h', self.amk_gains[2])
+            struct.pack_into('<hhh', self.data, 2, self.amk_gains[0], self.amk_gains[1], self.amk_gains[2])
 
-            message = can.Message(arbitration_id=self.target_address, data=data, is_extended_id=False)
+            self.message.data = self.data
+
             if self.parent.bus is not None:
-                self.parent.bus.send(message)
+                self.parent.bus.send(self.message)
+            
+            elapsed_time = (time.time() - start_time)*1000
+            logging.info(f"Message sent to {self.name} in {elapsed_time:.2f} ms")
 
         except Exception as e:
             print(e)
