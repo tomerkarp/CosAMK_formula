@@ -186,14 +186,19 @@ class CanComm:
 
     
     def _send_continuously(self):
+        counter = 0
+        start_time = time.time()
         while self.is_sending:
             with self.lock:
                 self.motors[0].send_message()
                 self.motors[1].send_message()
-                self.motors[2].send_message()
-                self.motors[3].send_message()
-                logging.info("------------------------Messages sent---------------------------------")
-            time.sleep(1)
+                # self.motors[2].send_message()
+                # self.motors[3].send_message()
+                elapsed_time = (time.time() - start_time)*1000
+                logging.info(f"------------------------Message {counter} sent after{elapsed_time:.2f} ms---------------------------------")
+            counter += 1
+            start_time = time.time()
+            time.sleep(0.001)
 
     def stop_sending_messages(self):
         self.is_sending = False
