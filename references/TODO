@@ -5,6 +5,10 @@ Todo:
   ✔ not selecting comm ports permanently @done(24-09-13 18:19)
   ☐ if comm port is not selected or not working for canbus communication, don't allow enabling communication (Harder than I thought)
   ☐ unit test with stm32 microcontroller the canbus communication
+  ☐ not setting all leds to red when canbus communication is not working
+  ☐ when disabling canbus communication, after cant enable it again 
+  ☐ add send message to each motor 
+  
   
   
 
