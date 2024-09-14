@@ -125,7 +125,7 @@ class CanComm:
                 # self.receive_message(test_message)
                 pass
             elif self.bus is not None:
-                message = self.bus.recv(timeout=1)
+                message = self.bus.recv(timeout=2)
                 if message is not None:
                     self.receive_message(message)
                 else:
@@ -192,13 +192,13 @@ class CanComm:
             with self.lock:
                 self.motors[0].send_message()
                 self.motors[1].send_message()
-                # self.motors[2].send_message()
-                # self.motors[3].send_message()
+                self.motors[2].send_message()
+                self.motors[3].send_message()
                 elapsed_time = (time.time() - start_time)*1000
                 logging.info(f"------------------------Message {counter} sent after{elapsed_time:.2f} ms---------------------------------")
             counter += 1
             start_time = time.time()
-            time.sleep(0.001)
+            time.sleep(0.01)
 
     def stop_sending_messages(self):
         self.is_sending = False
