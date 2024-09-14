@@ -321,7 +321,7 @@ class CANBusMonitor:
             if com_port == self.transmitting_com_var.get() and self.transmitting_enabled:
                 self.bus = self.send_bus
             else:
-                self.bus = can.interface.Bus(bustype='virtual', channel=com_port, bitrate=self.bitrate)
+                self.bus = can.interface.Bus(bustype='slcan', channel=com_port, bitrate=self.bitrate)
             self.reading_enabled = True
             self.toggle_reading_button.config(text="Disable Reading")
             print(f"Reading enabled on {com_port}.")

@@ -8,6 +8,8 @@ from scrollable_frame import VerticalScrolledFrame as ScrollableFrame
 import threading
 import time
 import os
+from datetime import datetime
+import random
 
 # CAN Operation Suite for AMK motor control
 config = {
@@ -74,6 +76,7 @@ class CanComm:
         self.lock = threading.Lock()
         self.comm_enable = False
         self.msg_log = None
+        self.comm_port = None
         
 
         self.amk_control_out = None
@@ -89,7 +92,19 @@ class CanComm:
     def update_bus(self, com_port):
         if self.bus is not None:
             self.bus.shutdown()
-        self.bus = can.interface.Bus(channel=com_port, bustype="virtual", bitrate=self.bitrate)
+        print(com_port)
+        self.comm_port = com_port
+        try:
+            if com_port == "Virtual":
+                self.bus = can.interface.Bus(channel="vcan0", interface="virtual", bitrate=self.bitrate)
+            else:
+                self.bus = can.interface.Bus(channel=com_port, interface="slcan", bitrate=self.bitrate)
+            test_message = can.Message(arbitration_id=0x7df, data=[0x02, 0x01, 0x00], is_extended_id=False)
+            self.bus.send(test_message) 
+
+        except Exception as e:
+            print(e)
+            self.bus = None
         
 
     def listen_to_can_bus(self):
@@ -97,17 +112,20 @@ class CanComm:
             if not self.comm_enable:
                 time.sleep(1)
                 continue    
-
-            if self.bus is not None and False:
+            if self.comm_port == "Virtual":       
+                # time.sleep(1)
+                # print("test message")
+                # test_arbitration_id = random.choice([0x283, 0x284, 0x287, 0x288])
+                # test_data = [0x01, random.randint(0, 127), 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF] 
+                # test_message = can.Message(arbitration_id=test_arbitration_id, data=test_data, is_extended_id=False)
+                # self.receive_message(test_message)
+                pass
+            elif self.bus is not None:
                 message = self.bus.recv()
                 if message is not None:
                     self.receive_message(message)
-            else:       
-                time.sleep(1)
-                test_arbitration_id = 0x283
-                test_data = [0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF] 
-                test_message = can.Message(arbitration_id=test_arbitration_id, data=test_data, is_extended_id=False)
-                self.receive_message(test_message)
+            
+
     
     def disable_communication(self):
         self.comm_enable = False
@@ -139,18 +157,23 @@ class CanComm:
                 motor.recieve_update(message, bit_values)
                 print(motor.amk_configs)
                 print(motor.amk_actual_values)
-        self.update_log(message)
+            self.update_log(message)
     
     def update_log(self, message):
         if self.control_app.msg_log is None or not self.control_app.msg_log.winfo_exists():
             return
         self.control_app.msg_log.add_message(message)
 
-    def start_sending_messages(self):
+    def start_sending_messages(self) -> bool:
+        self.update_bus(self.control_app.comport_var.get())
+        if self.bus is None:
+            return False
         if not self.is_sending:
             self.is_sending = True
             self.sending_thread = threading.Thread(target=self._send_continuously)
             self.sending_thread.start()
+        return True
+
     
     def _send_continuously(self):
         while self.is_sending:
@@ -282,7 +305,7 @@ class MotorControlApp(tk.Tk):
         self.create_amk_control_checkbox("AMK Control")
 
         self.update_comports()
-        self.debug()
+        # self.debug()
 
     
 
@@ -295,8 +318,10 @@ class MotorControlApp(tk.Tk):
     def enable_communication(self):
         print("Communication enabled")
         self.parent.comm_enable = True
-        self.parent.start_sending_messages()
-        self.enable_button.config(text="Disable communication")
+        if not self.parent.start_sending_messages():
+            self.parent.comm_enable = False
+        else:
+            self.enable_button.config(text="Disable communication")
 
     def disable_communication(self):
         print("Communication disabled")
@@ -317,7 +342,7 @@ class MotorControlApp(tk.Tk):
 
         for bit, control_name in config["AMK_Control"].items():
             var = tk.IntVar()
-            checkbox = tk.Checkbutton(self.checkbox_frame, text=control_name, variable=var) #TODO: command=toggle_control   
+            checkbox = tk.Checkbutton(self.checkbox_frame, text=control_name, variable=var)
             checkbox.pack(anchor='w', pady=2)
             self.checkbox_vars[bit] = var
     
@@ -326,14 +351,21 @@ class MotorControlApp(tk.Tk):
 
         com_ports = self.get_com_ports()
 
+        current_selection = self.comport_var.get()
+
         menu = self.comport_dropdown["menu"]
         menu.delete(0, "end")
+
+        com_ports.append("Virtual")
+
         if com_ports:
             for port in com_ports:
                 menu.add_command(label=port, command=tk._setit(self.comport_var, port))
-            self.comport_var.set(com_ports[0])
+        
+        if current_selection in com_ports:
+            self.comport_var.set(current_selection)
         else:
-            self.comport_var.set("No COM Port Available")
+            self.comport_var.set("Not Available")
 
         self.after(2000, self.update_comports)
 
@@ -398,8 +430,7 @@ class MotorFrame(tk.Frame):
             slide_config = config["AMK_Setpoint"][16 + 16*i]
             label = tk.Label(self.sliders_frame, text=slide_config[0])
             label.grid(row=2*i, column=0, padx=1)
-            slider = tk.Scale(self.sliders_frame, from_=slide_config[1][0], to=slide_config[1][1], orient="horizontal") #TODO: command=update_setpoint 
-
+            slider = tk.Scale(self.sliders_frame, from_=slide_config[1][0], to=slide_config[1][1], orient="horizontal") 
             slider.grid(row=2*i+1, column=0, padx=1)
             
             entry_var = tk.StringVar()
@@ -528,9 +559,22 @@ class MessageLog(tk.Toplevel):
         self.tree.column("Data", width=400, anchor="center")
 
         self.tree.pack(fill="both", expand=True)
+        self.message_cache = {}
     
     def add_message(self, message):
-        self.tree.insert("", "end", values=(time.time(), message.arbitration_id, message.data))
+        time = datetime.fromtimestamp(message.timestamp).strftime("%H:%M:%S")
+        msg_id = f"0x{message.arbitration_id:X}"
+        data = " ".join(format(byte, '02x') for byte in message.data)
+        if message.arbitration_id in self.message_cache:
+            item_id = self.message_cache[message.arbitration_id]
+            self.tree.item(item_id, values=(time, msg_id, data))
+        else:
+            item_id = self.tree.insert("", "end", values=(time, msg_id, data))
+            self.message_cache[message.arbitration_id] = item_id
+        
+        self.tree.yview_moveto(1)
+        
+
 
 
 

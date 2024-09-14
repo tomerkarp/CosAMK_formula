@@ -1,0 +1,10 @@
+
+#TODO
+Todo:
+  ✔ add message log canbus arbitration implementation @done(24-09-13 19:24)
+  ✔ not selecting comm ports permanently @done(24-09-13 18:19)
+  ☐ if comm port is not selected or not working for canbus communication, don't allow enabling communication (Harder than I thought)
+  ☐ unit test with stm32 microcontroller the canbus communication
+  
+  
+

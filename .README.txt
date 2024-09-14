@@ -1,0 +1,1 @@
+Samk = Stm32 Assessor AMK
