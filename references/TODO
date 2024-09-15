@@ -10,7 +10,10 @@ Todo:
   ✔ motor speed, torque, setpooints are not working @done(24-09-15 10:50)
   ✘ add send message to each motor @cancelled(24-09-15 10:50)
   ☐ try using concurrent.futures instead of threading
-  
+  ☐ Aipex: change max speed 
+  ✔ speed scale change @done(24-09-15 17:00)
+  ✔ revers torque negative @done(24-09-15 17:01)
+  ☐ press enter to update gains @started(24-09-15 17:01)
   
   
 

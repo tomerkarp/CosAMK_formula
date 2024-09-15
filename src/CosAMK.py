@@ -39,9 +39,9 @@ config = {
         11: "AMK_bErrorReset",
     },
     "AMK_Setpoint": {
-        16: ("AMK_TargetVelocity",(-5000, 5000)),
-        32: ("AMK_TorqueLimitPositiv", (0,10000)),
-        48: ("AMK_TorqueLimitNegativ",(0,10000)),
+        16: ("AMK_TargetVelocity",(-3000, 3000)),
+        32: ("AMK_TorqueLimitPositiv", (200,0)),
+        48: ("AMK_TorqueLimitNegativ",(200,0)),
     }    
 }   
 motor_config = {
@@ -193,8 +193,8 @@ class CanComm:
             with self.lock:
                 self.motors[0].send_message()
                 self.motors[1].send_message()
-                self.motors[2].send_message()
-                self.motors[3].send_message()
+                # self.motors[2].send_message()
+                # self.motors[3].send_message()
                 elapsed_time = (time.time() - start_time)*1000
                 logging.info(f"------------------------Message {counter} sent after{elapsed_time:.2f} ms---------------------------------")
             counter += 1
