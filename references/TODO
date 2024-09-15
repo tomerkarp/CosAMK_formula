@@ -3,12 +3,12 @@
 Todo:
   ✔ add message log canbus arbitration implementation @done(24-09-13 19:24)
   ✔ not selecting comm ports permanently @done(24-09-13 18:19)
-  ☐ if comm port is not selected or not working for canbus communication, don't allow enabling communication (Harder than I thought)
-  ☐ unit test with stm32 microcontroller the canbus communication
-  ☐ not setting all leds to red when canbus communication is not working
-  ☐ when disabling canbus communication, after cant enable it again 
-  ☐ motor speed, torque, setpooints are not working
-  ☐ add send message to each motor 
+  ✘ if comm port is not selected or not working for canbus communication, don't allow enabling communication (Harder than I thought) @cancelled(24-09-15 10:51)
+  ☐ unit test with stm32 microcontroller the canbus communication @started(24-09-14 13:20)
+  ✔ not setting all leds to red when canbus communication is not working @done(24-09-14 22:00)
+  ✔ when disabling canbus communication, after cant enable it again @done(24-09-15 10:50)
+  ✔ motor speed, torque, setpooints are not working @done(24-09-15 10:50)
+  ✘ add send message to each motor @cancelled(24-09-15 10:50)
   ☐ try using concurrent.futures instead of threading
   
   
