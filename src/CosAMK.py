@@ -12,6 +12,7 @@ from datetime import datetime
 import random
 import logging
 
+
 logging.basicConfig(filename="can_comm.log", level=logging.INFO)
 
 # CAN Operation Suite for AMK motor control
@@ -246,8 +247,7 @@ class Motor:
 
     def send_message(self):
         try:
-            start_time = time.time()
-            control_out = self.amk_control 
+            control_out = self.parent.amk_control_out 
             self.data[1] = (control_out[8] << 0) | \
                         (control_out[9] << 1) | \
                         (control_out[10] << 2) | \
@@ -260,8 +260,8 @@ class Motor:
             if self.parent.bus is not None:
                 self.parent.bus.send(self.message)
             
-            elapsed_time = (time.time() - start_time)*1000
-            logging.info(f"Message sent to {self.name} in {elapsed_time:.2f} ms")
+            logging.info(f"Message sent to {self.name} motor: {self.message}")
+            
 
         except Exception as e:
             print(e)
@@ -449,7 +449,7 @@ class MotorFrame(tk.Frame):
         self.sliders_frame = tk.Frame(self)
         self.sliders_frame.pack(fill="x", pady=5)
 
-        self.slider_vars = []
+        self.slider_vars = [0]*3
         for i in range(3):
             slide_config = config["AMK_Setpoint"][16 + 16*i]
             label = tk.Label(self.sliders_frame, text=slide_config[0])
@@ -461,8 +461,12 @@ class MotorFrame(tk.Frame):
             entry = tk.Entry(self.sliders_frame, textvariable=entry_var, width=10)
             entry.grid(row=2*i+1, column=1, padx=1)
 
-            self.after(100, lambda s=slider, v=entry_var: v.trace_add("write", lambda *args: self.update_slider(s, v)))
-            self.slider_vars.append(entry_var)
+            slider.config(command=lambda *args, s=slider, e=entry_var, i=i: self.update_entry_from_slider(s, e, i))
+            entry_var.trace_add("write", lambda *args, s=slider, e=entry_var, i=i: self.update_slider(s, e, i))
+            
+        
+        
+
     
         self.sliders_frame.pack(fill="x", pady=5)
 
@@ -505,12 +509,23 @@ class MotorFrame(tk.Frame):
         self.after(100, lambda s=section_name: self.update_leds(s))
 
 
-    def update_slider(self, slider, entry_var):
+    def update_slider(self, slider, entry_var, i):
         try:
             value = int(entry_var.get())
+            if slider.get() == value:
+                return
             slider.set(value)
+            self.motor_parent.amk_gains[i] = value
+
         except ValueError:
             pass
+
+    def update_entry_from_slider(self, slider, entry_var, i):
+        value = int(slider.get())
+        if entry_var.get() != str(value):
+            entry_var.set(str(value))
+            self.motor_parent.amk_gains[i] = value
+            
     
     def create_amk_vals(self, section_name, frame):
         for bit, control_name in config[section_name].items():

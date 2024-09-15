@@ -7,7 +7,9 @@ Todo:
   ☐ unit test with stm32 microcontroller the canbus communication
   ☐ not setting all leds to red when canbus communication is not working
   ☐ when disabling canbus communication, after cant enable it again 
+  ☐ motor speed, torque, setpooints are not working
   ☐ add send message to each motor 
+  ☐ try using concurrent.futures instead of threading
   
   
   
