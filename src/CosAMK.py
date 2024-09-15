@@ -40,8 +40,8 @@ config = {
     },
     "AMK_Setpoint": {
         16: ("AMK_TargetVelocity",(-3000, 3000)),
-        32: ("AMK_TorqueLimitPositiv", (200,0)),
-        48: ("AMK_TorqueLimitNegativ",(200,0)),
+        32: ("AMK_TorqueLimitPositiv", (0,200)),
+        48: ("AMK_TorqueLimitNegativ",(-200,0)),
     }    
 }   
 motor_config = {
@@ -462,7 +462,8 @@ class MotorFrame(tk.Frame):
             entry.grid(row=2*i+1, column=1, padx=1)
 
             slider.config(command=lambda *args, s=slider, e=entry_var, i=i: self.update_entry_from_slider(s, e, i))
-            entry_var.trace_add("write", lambda *args, s=slider, e=entry_var, i=i: self.update_slider(s, e, i))
+            entry.bind("<Return>", lambda *args, s=slider, e=entry_var, i=i: self.update_slider(s, e, i))
+            # entry_var.trace_add("write", lambda *args, s=slider, e=entry_var, i=i: self.update_slider(s, e, i))
             
         
         
