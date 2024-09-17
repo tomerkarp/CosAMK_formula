@@ -11,6 +11,8 @@ import os
 from datetime import datetime
 import random
 import logging
+import serial 
+import io
 
 
 logging.basicConfig(filename="can_comm.log", level=logging.INFO)
@@ -69,7 +71,25 @@ motor_config = {
 
     }
 }
+class Message:
+    def __init__(self, msg_id, data):
+        self.time = datetime.fromtimestamp(time.time()).strftime("%H:%M:%S")
+        self.msg_id = msg_id
+        self.data = data
 
+    def __str__(self):
+        return f"Address: {self.msg_id:x}, Data: {self.data[0]:x}{self.data[1]:x}{self.data[2]:x}{self.data[3]:x}{self.data[4]:x}{self.data[5]:x}{self.data[6]:x}{self.data[7]:x}"
+    
+    def from_string(self, string):
+        parts = string.split(", ")  
+        self.time = time.time()
+        address = parts[0].replace("Address: ", "")
+        self.msg_id = int(address, 16)
+
+        data = parts[1].replace("Data: ", "")
+
+        self.data = bytearray([int(data[i:i+2], 16) for i in range(0, len(data), 2)])
+    
 class CanComm:
     def __init__(self, bitrate=500000):
         self.is_sending = False
@@ -81,6 +101,7 @@ class CanComm:
         self.comm_enable = False
         self.msg_log = None
         self.comm_port = None
+        self.ser = None
         
 
         self.amk_control_out = None
@@ -93,50 +114,30 @@ class CanComm:
         self.listen_thread.daemon = True
         self.listen_thread.start()
         
-    def update_bus(self, com_port):
-        if self.bus is not None:
-            self.bus.shutdown()
-            self.bus = None
-        print(com_port)
-        self.comm_port = com_port
-        try:
-            if com_port == "Virtual":
-                self.bus = can.interface.Bus(channel="vcan0", interface="virtual", bitrate=self.bitrate)
-            else:
-                self.bus = can.interface.Bus(channel=com_port, interface="slcan", bitrate=self.bitrate)
-            test_message = can.Message(arbitration_id=0x7df, data=[0x02, 0x01, 0x00], is_extended_id=False)
-            self.bus.send(test_message) 
 
-        except Exception as e:
-            print(e)
-            self.bus = None
+    def update_port(self, port):
+        if self.ser is not None:
+            if self.ser.is_open:
+                self.ser.close()
+            self.ser = None
+        self.ser = serial.Serial(port, 115200, timeout=1)
+        self.comm_port = port
         
-
-    def listen_to_can_bus(self):
+        
+    def listen_to_Uart(self):
         while True:
             if not self.comm_enable:
                 time.sleep(1)
-                continue    
-            if self.comm_port == "Virtual":       
-                # time.sleep(1)
-                # print("test message")
-                # test_arbitration_id = random.choice([0x283, 0x284, 0x287, 0x288])
-                # test_data = [0x01, random.randint(0, 127), 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF] 
-                # test_message = can.Message(arbitration_id=test_arbitration_id, data=test_data, is_extended_id=False)
-                # self.receive_message(test_message)
-                pass
-            elif self.bus is not None:
-                message = self.bus.recv(timeout=2)
-                if message is not None:
-                    self.receive_message(message)
-                else:
-                    for motor in self.motors:
-                        motor.reset()
-                
-                
-                
-            
+                continue
+            if self.ser is not None and self.ser.is_open:
+                string = self.ser.readline()
+                message = self.read_uart_message(string)
+                self.receive_uart_message() #TODO: implement this function    
 
+    def read_uart_message(self, string) -> Message:
+        message = Message(0, bytearray(8))
+        message.from_string(string)
+        return message  
     
     def disable_communication(self):
         self.comm_enable = False
@@ -169,6 +170,16 @@ class CanComm:
                 # print(motor.amk_configs)
                 # print(motor.amk_actual_values)
             self.update_log(message)
+
+    def receive_uart_message(self, message: Message):
+        if message is None:
+            return
+        with self.lock:
+            for motor in self.motors:
+                motor.recieve_uart_update(message)
+
+            self.update_log(message)
+
     
     def update_log(self, message):
         if self.control_app.msg_log is None or not self.control_app.msg_log.winfo_exists():
@@ -185,6 +196,32 @@ class CanComm:
             self.sending_thread.start()
         return True
 
+    def start_sending_messages_uart(self) -> bool:
+        self.update_port(self.control_app.comport_var.get())
+        if self.ser is None:
+            return False
+        if not self.is_sending:
+            self.is_sending = True
+            self.sending_thread = threading.Thread(target=self._send_uart_continuously)
+            self.sending_thread.start()
+        return True
+    
+    def _send_uart_continuously(self):
+        counter = 0
+        start_time = time.time()
+        while self.is_sending:
+            with self.lock:
+                self.motors[0].send_uart_message()
+                self.motors[1].send_uart_message()
+                # self.motors[2].send_message()
+                # self.motors[3].send_message()
+                elapsed_time = (time.time() - start_time)*1000
+                logging.info(f"------------------------Message {counter} sent after{elapsed_time:.2f} ms---------------------------------")
+            counter += 1
+            start_time = time.time()
+            time.sleep(0.05)
+
+
     
     def _send_continuously(self):
         counter = 0
@@ -200,6 +237,11 @@ class CanComm:
             counter += 1
             start_time = time.time()
             time.sleep(0.01)
+
+    def stop_sending_messages_uart(self):
+        self.is_sending = False
+        if self.sending_thread:
+            self.sending_thread.join()
 
     def stop_sending_messages(self):
         self.is_sending = False
@@ -226,6 +268,7 @@ class Motor:
         self.data[0] = 0
 
         self.message = can.Message(arbitration_id=self.target_address, data=self.data, is_extended_id=False)
+        self.uart_message = Message(self.target_address, self.data)
 
 
 
@@ -241,6 +284,18 @@ class Motor:
                 self.amk_control[key] = bit 
         else:
             pass
+    
+    def recieve_uart_update(self, message: Message):
+        if not self.parent.comm_enable:
+            return
+        if message.msg_id == self.status_address:
+            self.update_amk_actual_values(message)
+            for key in self.amk_status.keys():
+                self.amk_status[key] = message.data[key]
+        elif message.msg_id == self.control_address:
+            for key in self.amk_control.keys():
+                self.amk_control[key] = message.data[key]
+        
     
     def reset(self):
         self.__init__(self.name, self.parent)
@@ -266,10 +321,31 @@ class Motor:
         except Exception as e:
             print(e)
     
+
+    def send_uart_message(self):
+        try:
+            control_out = self.parent.amk_control_out 
+            self.data = bytearray(8)
+            self.data[1] = sum(control_out[i+8] << i for i in range(4))
+            struct.pack_into('<hhh', self.data, 2, self.amk_gains[0], self.amk_gains[1], self.amk_gains[2])
+
+            self.uart_message.data = self.data
+
+            if self.parent.ser is not None and self.parent.ser.is_open:
+                self.parent.ser.write(self.uart_message.data)
+            
+            logging.info(f"Message sent to {self.name} motor: {self.uart_message}")
+
+        except Exception as e:
+            print(e)
+            
+    
     def update_amk_actual_values(self, message):
         self.amk_actual_values[16] = struct.unpack('<h', message.data[2:4])[0]
         self.amk_actual_values[32] = struct.unpack('<h', message.data[4:6])[0]
         self.amk_actual_values[48] = struct.unpack('<h', message.data[6:8])[0]
+
+
 
 class MotorControlApp(tk.Tk):
     def __init__(self, parent: CanComm):
@@ -613,7 +689,8 @@ class MessageLog(tk.Toplevel):
             self.message_cache[message.arbitration_id] = item_id
         
         self.tree.yview_moveto(1)
-        
+
+
 
 
 
